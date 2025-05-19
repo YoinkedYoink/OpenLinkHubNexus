@@ -1212,16 +1212,14 @@ func (d *Device) getActionCodeByPosition(pixel uint16) (uint8, string, string) {
 		return 0, "", ""
 	}
 
-	for name, value := range d.LCDProfiles.Profiles {
-		if name == d.DeviceProfile.LCDMode {
-			for _, button := range value.Buttons {
-				if pixel >= button.TouchPositionMin && pixel <= button.TouchPositionMax {
-					if strings.Contains(button.Command, "switchscreen") {
-						d.UpdateDeviceLcdProfile(strings.Split(button.Command, " ")[1])
-						return 0, "", ""
-					}
-					return button.ActionCode, button.Command, button.CommandENV
+	if value, ok := d.LCDProfiles.Profiles[d.DeviceProfile.LCDMode]; ok {
+		for _, button := range value.Buttons {
+			if pixel >= button.TouchPositionMin && pixel <= button.TouchPositionMax {
+				if strings.Contains(button.Command, "switchscreen") {
+					d.UpdateDeviceLcdProfile(strings.Split(button.Command, " ")[1])
+					return 0, "", ""
 				}
+				return button.ActionCode, button.Command, button.CommandENV
 			}
 		}
 	}
