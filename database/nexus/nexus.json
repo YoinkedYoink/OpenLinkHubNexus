@@ -48,14 +48,23 @@
       "buttons": {},
       "keyboard": false
     },
-    "media-control": {
-      "name": "Media Control",
+
+
+
+
+
+
+
+    "custom-home": {
+      "name": "Custom Home",
       "background": "/database/nexus/background.jpg",
       "fontPath": "/static/fonts/teko.ttf",
       "buttons": {
         "0": {
-          "actionCode": 2,
-          "text": "VOLUME -",
+          "actionCode": 0,
+          "command": "switchscreen apps",
+          "commandENV": "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus DISPLAY=:0 WAYLAND_DISPLAY=wayland-1 XDG_SESSION_TYPE=wayland",
+          "text": "Apps",
           "textSize": 20,
           "width": 100,
           "height": 40,
@@ -66,29 +75,31 @@
           },
           "border": 1,
           "borderColor": {
-            "red": 0,
+            "red": 255,
             "green": 255,
             "blue": 255
           },
           "showIcon": false,
-          "icon": "/database/nexus/icon-volume-down.png",
+          "icon": "",
           "iconWidth": 20,
           "iconHeight": 20,
-          "iconOffsetX": 10,
+          "iconOffsetX": 5,
           "iconOffsetY": 10,
           "offsetX": 6,
           "offsetY": 4,
           "touchPositionMin": 0,
-          "TouchPositionMax": 72,
+          "TouchPositionMax": 106,
           "textColor": {
             "red": 255,
             "green": 255,
-            "blue": 0
+            "blue": 255
           }
         },
         "1": {
-          "actionCode": 1,
-          "text": "VOLUME +",
+          "actionCode": 0,
+          "command": "bash /opt/OpenLinkHub/scripts/changepage.sh media",
+          "commandENV": "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus DISPLAY=:0 WAYLAND_DISPLAY=wayland-1 XDG_SESSION_TYPE=wayland",
+          "text": "Media",
           "textSize": 20,
           "width": 100,
           "height": 40,
@@ -99,14 +110,14 @@
           },
           "border": 1,
           "borderColor": {
-            "red": 0,
-            "green": 255,
-            "blue": 255
+            "red": 255,
+            "green": 0,
+            "blue": 0
           },
           "showIcon": false,
-          "icon": "/database/nexus/icon-volume-up.png",
-          "iconWidth": 20,
-          "iconHeight": 20,
+          "icon": "",
+          "iconWidth": 40,
+          "iconHeight": 40,
           "iconOffsetX": 10,
           "iconOffsetY": 10,
           "offsetX": 112,
@@ -120,8 +131,10 @@
           }
         },
         "2": {
-          "actionCode": 6,
-          "text": "PLAY",
+          "actionCode": 0,
+          "command": "bash /opt/OpenLinkHub/scripts/changepage.sh macro",
+          "commandENV": "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus DISPLAY=:0 WAYLAND_DISPLAY=wayland-1 XDG_SESSION_TYPE=wayland",
+          "text": "Macro",
           "textSize": 20,
           "width": 100,
           "height": 40,
@@ -137,7 +150,7 @@
             "blue": 255
           },
           "showIcon": false,
-          "icon": "/database/nexus/icon-pause.png",
+          "icon": "",
           "iconWidth": 20,
           "iconHeight": 15,
           "iconOffsetX": 10,
@@ -153,8 +166,10 @@
           }
         },
         "3": {
-          "actionCode": 4,
-          "text": "STOP",
+          "actionCode": 0,
+          "command": "echo hi",
+          "commandENV": "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus DISPLAY=:0 WAYLAND_DISPLAY=wayland-1 XDG_SESSION_TYPE=wayland",
+          "text": "BLANK",
           "textSize": 20,
           "width": 100,
           "height": 40,
@@ -170,7 +185,7 @@
             "blue": 255
           },
           "showIcon": false,
-          "icon": "/database/nexus/icon-stop.png",
+          "icon": "",
           "iconWidth": 20,
           "iconHeight": 20,
           "iconOffsetX": 10,
@@ -186,8 +201,10 @@
           }
         },
         "4": {
-          "actionCode": 5,
-          "text": "PREVIOUS",
+          "actionCode": 0,
+          "command": "bash /opt/OpenLinkHub/scripts/changepage.sh config",
+          "commandENV": "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus DISPLAY=:0 WAYLAND_DISPLAY=wayland-1 XDG_SESSION_TYPE=wayland",
+          "text": "Config",
           "textSize": 20,
           "width": 100,
           "height": 40,
@@ -203,7 +220,7 @@
             "blue": 255
           },
           "showIcon": false,
-          "icon": "/database/nexus/icon-backward.png",
+          "icon": "",
           "iconWidth": 20,
           "iconHeight": 15,
           "iconOffsetX": 10,
@@ -219,8 +236,10 @@
           }
         },
         "5": {
-          "actionCode": 7,
-          "text": "NEXT",
+          "actionCode": 0,
+          "command": "bash /opt/OpenLinkHub/scripts/changepage.sh stats",
+          "commandENV": "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus DISPLAY=:0 WAYLAND_DISPLAY=wayland-1 XDG_SESSION_TYPE=wayland",
+          "text": "Stats",
           "textSize": 20,
           "width": 100,
           "height": 40,
@@ -236,7 +255,7 @@
             "blue": 255
           },
           "showIcon": false,
-          "icon": "/database/nexus/icon-forward.png",
+          "icon": "",
           "iconWidth": 20,
           "iconHeight": 15,
           "iconOffsetX": 10,
@@ -252,6 +271,111 @@
           }
         }
       },
+      "keyboard": true
+    },
+
+    "apps": {
+      "name": "apps",
+      "background": "/database/nexus/background.jpg",
+      "fontPath": "/static/fonts/teko.ttf",
+      "textColor": {
+        "red": 255,
+        "green": 255,
+        "blue": 255
+      },
+      "buttons": {
+        "0": {
+          "actionCode": 0,
+          "command": "switchscreen custom-home",
+          "commandENV": "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus DISPLAY=:0 WAYLAND_DISPLAY=wayland-1 XDG_SESSION_TYPE=wayland",
+          "text": "",
+          "textSize": 0,
+          "width": 42,
+          "height": 42,
+          "background": {
+            "red": 24,
+            "green": 24,
+            "blue": 24
+          },
+          "border": 1,
+          "borderColor": {
+            "red": 0,
+            "green": 255,
+            "blue": 255
+          },
+          "showIcon": true,
+          "icon": "database/nexus/home-icon.png",
+          "iconWidth": 43,
+          "iconHeight": 42,
+          "iconOffsetX": 10,
+          "iconOffsetY": 12,
+          "offsetX": 10,
+          "offsetY": 4,
+          "touchPositionMin": 10,
+          "TouchPositionMax": 110,
+          "textColor": {
+            "red": 255,
+            "green": 255,
+            "blue": 0
+          }
+        },
+
+        "1": {
+          "actionCode": 0,
+          "command": "vesktop",
+          "commandENV": "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus DISPLAY=:0 WAYLAND_DISPLAY=wayland-1 XDG_SESSION_TYPE=wayland",
+          "text": "",
+          "textSize": 20,
+          "width": 42,
+          "height": 42,
+          "background": {
+            "red": 24,
+            "green": 24,
+            "blue": 24
+          },
+          "border": 1,
+          "borderColor": {
+            "red": 0,
+            "green": 255,
+            "blue": 255
+          },
+          "showIcon": true,
+          "icon": "/database/nexus/vesktop.png",
+          "iconWidth": 42,
+          "iconHeight": 42,
+          "iconOffsetX": 0,
+          "iconOffsetY": 0,
+          "offsetX": 532,
+          "offsetY": 4,
+          "touchPositionMin": 515,
+          "TouchPositionMax": 640,
+          "textColor": {
+            "red": 255,
+            "green": 255,
+            "blue": 0
+          }
+        }
+
+      },
+      "keyboard": true
+    },
+
+
+
+
+
+
+
+    "custom-idle": {
+      "name": "Custom Idle",
+      "background": "/database/nexus/background.jpg",
+      "fontPath": "/static/fonts/teko.ttf",
+      "textColor": {
+        "red": 255,
+        "green": 255,
+        "blue": 255
+      },
+      "buttons": {},
       "keyboard": true
     }
   }

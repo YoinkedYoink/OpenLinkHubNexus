@@ -16,10 +16,23 @@ import (
 	"OpenLinkHub/src/rgb"
 	"OpenLinkHub/src/stats"
 	"OpenLinkHub/src/systeminfo"
+
 	"OpenLinkHub/src/temperatures"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/color"
+	"image/jpeg"
+	_ "image/png"
+	"os"
+	"os/exec"
+	"regexp"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
 	"github.com/golang/freetype"
 	"github.com/golang/freetype/truetype"
 	"github.com/sstallion/go-hid"
@@ -28,16 +41,6 @@ import (
 	_ "golang.org/x/image/font"
 	"golang.org/x/image/font/opentype"
 	_ "golang.org/x/image/webp"
-	"image"
-	"image/color"
-	"image/jpeg"
-	_ "image/png"
-	"os"
-	"regexp"
-	"strconv"
-	"strings"
-	"sync"
-	"time"
 )
 
 type DeviceProfile struct {
@@ -53,6 +56,8 @@ type DeviceProfile struct {
 
 type Button struct {
 	ActionCode       uint8     `json:"actionCode"`
+	Command          string    `json:"command"`
+	CommandENV       string    `json:"commandENV"`
 	Text             string    `json:"text"`
 	TextSize         int       `json:"textSize"`
 	Width            int       `json:"width"`
@@ -129,8 +134,8 @@ type Device struct {
 
 var (
 	pwd                        = ""
-	lcdRefreshInterval         = 1000
-	deviceRefreshInterval      = 1000
+	lcdRefreshInterval         = 100
+	deviceRefreshInterval      = 100
 	lcdHeaderSize              = 8
 	lcdBufferSize              = 1024
 	firmwareReportId           = byte(5)
@@ -138,6 +143,7 @@ var (
 	maxLCDBufferSizePerRequest = lcdBufferSize - lcdHeaderSize
 	imgWidth                   = 640
 	imgHeight                  = 48
+	idleTimer                  = time.NewTimer(time.Duration(15) * time.Second)
 )
 
 // Init will initialize a new device
@@ -434,12 +440,33 @@ func (d *Device) loadLcdBackground() {
 
 							resizedIcon := common.ResizeImage(overlayImg, v.IconWidth, v.IconHeight)
 
+							// Convert the image to RGBA to get pixel data
+							iconImg := image.NewRGBA(image.Rect(0, 0, v.IconWidth, v.IconHeight))
+
+							// Draw the image onto the RGBA object
+							for iy := y; iy < y+v.IconHeight; iy++ {
+								for ix := x; ix < x+v.IconWidth; ix++ {
+									// Get the color of the pixel
+									c := resizedIcon.At(ix, iy)
+									r, g, b, a := c.RGBA()
+
+									// Convert to 8-bit RGBA (8 bits for each channel)
+									// Flip R and B values
+									iconImg.Set(ix-x, iy-y, color.RGBA{
+										B: uint8(r >> 8),
+										G: uint8(g >> 8),
+										R: uint8(b >> 8),
+										A: uint8(a >> 8),
+									})
+								}
+							}
+
 							// Set overlay position
 							offsetIcon := image.Pt(v.IconOffsetX, v.IconOffsetY)
 							overlayIconRect := image.Rectangle{Min: offsetIcon, Max: offsetIcon.Add(resizedIcon.Bounds().Size())}
 
 							// Draw overlay onto background with transparency (draw.Over handles alpha)
-							draw.Draw(img, overlayIconRect, resizedIcon, image.Point{}, draw.Over)
+							draw.Draw(img, overlayIconRect, iconImg, image.Point{}, draw.Over)
 						}
 
 						// Draw overlay on background
@@ -894,6 +921,111 @@ func drawString(fontData *opentype.Font, x, y int, fontSite float64, text string
 	d.DrawString(text)
 }
 
+func (d *Device) renderIdleScreen(time string, musicTitle string, musicArt string) []byte {
+	if d.LCDProfiles == nil || d.DeviceProfile == nil {
+		return nil
+	}
+
+	if profile, ok := d.LCDProfiles.Profiles[d.DeviceProfile.LCDMode]; ok {
+		if profile.Image == nil {
+			return nil
+		}
+
+		rgba := image.NewRGBA(profile.Image.Bounds())
+		draw.Draw(rgba, rgba.Bounds(), profile.Image, image.Point{}, draw.Src)
+
+		//Draw Time
+		if musicTitle == "" { //if no music, center the time
+			c := freetype.NewContext()
+			c.SetDPI(72)
+			c.SetFont(profile.Font)
+			c.SetClip(rgba.Bounds())
+			c.SetDst(rgba)
+			c.SetSrc(image.NewUniform(color.RGBA{R: 255, G: 255, B: 253, A: 255}))
+			x, y, _, _ := calculateStringXY(profile.SfntFont, 30, time)
+			drawString(profile.SfntFont, x, y, 30, time, rgba, &profile.TextColor)
+
+		} else { // if music, move a little to the left
+			c := freetype.NewContext() //time
+			c.SetDPI(72)
+			c.SetFont(profile.Font)
+			c.SetClip(rgba.Bounds())
+			c.SetDst(rgba)
+			c.SetSrc(image.NewUniform(color.RGBA{R: 255, G: 255, B: 253, A: 255}))
+			_, y, _, _ := calculateStringXY(profile.SfntFont, 26, time)
+			drawString(profile.SfntFont, 50, y, 26, time, rgba, &profile.TextColor)
+
+			c = freetype.NewContext() //music Title
+			c.SetDPI(72)
+			c.SetFont(profile.Font)
+			c.SetClip(rgba.Bounds())
+			c.SetDst(rgba)
+			c.SetSrc(image.NewUniform(color.RGBA{R: 255, G: 255, B: 253, A: 255}))
+			_, y, _, _ = calculateStringXY(profile.SfntFont, 26, musicTitle)
+			drawString(profile.SfntFont, 290, y-3, 26, musicTitle, rgba, &profile.TextColor)
+
+			if musicArt != "" {
+				x, y := 0, 0
+				icon := strings.Replace(musicArt, "file://", "", -1)
+				overlayFile, e := os.Open(icon)
+				if e != nil {
+					logger.Log(logger.Fields{"error": e, "serial": d.Serial, "location": icon}).Error("Unable to load LCD profile icon")
+
+				} else { //Idk how else to make it skip if it errors
+
+					overlayImg, _, decodeError := image.Decode(overlayFile)
+					if decodeError != nil {
+						logger.Log(logger.Fields{"error": decodeError, "serial": d.Serial, "location": icon}).Error("Unable to decode LCD profile icon")
+						return renderImageToBytes(rgba)
+					} else { //Same here as well
+
+						resizedIcon := common.ResizeImage(overlayImg, 40, 40)
+
+						// Convert the image to RGBA to get pixel data
+						iconImg := image.NewRGBA(image.Rect(0, 0, 40, 40))
+
+						// Draw the image onto the RGBA object
+						for iy := y; iy < y+40; iy++ {
+							for ix := x; ix < x+40; ix++ {
+								// Get the color of the pixel
+								c := resizedIcon.At(ix, iy)
+								r, g, b, a := c.RGBA()
+
+								// Convert to 8-bit RGBA (8 bits for each channel)
+								// Flip R and B values
+								iconImg.Set(ix-x, iy-y, color.RGBA{
+									B: uint8(r >> 8),
+									G: uint8(g >> 8),
+									R: uint8(b >> 8),
+									A: uint8(a >> 8),
+								})
+							}
+						}
+
+						// Set overlay position
+						offsetIcon := image.Pt(240, 4)
+						overlayIconRect := image.Rectangle{Min: offsetIcon, Max: offsetIcon.Add(resizedIcon.Bounds().Size())}
+
+						// Draw overlay onto background with transparency (draw.Over handles alpha)
+						draw.Draw(rgba, overlayIconRect, iconImg, image.Point{}, draw.Over)
+
+					}
+				}
+			}
+		}
+
+		//Render mic muted if it is muted
+
+		return renderImageToBytes(rgba)
+	}
+	return nil
+}
+
+func outputregex(s string) string {
+	re := regexp.MustCompile("\\n|'")
+	return re.ReplaceAllString(s, "")
+}
+
 // setupLCD will activate and configure LCD
 func (d *Device) setupLCD() {
 	d.lcdTimer = time.NewTicker(time.Duration(lcdRefreshInterval) * time.Millisecond)
@@ -942,6 +1074,34 @@ func (d *Device) setupLCD() {
 							d.transfer(buf)
 						}
 					case "media-control":
+						{
+							buf := d.renderEmpty()
+							d.transfer(buf)
+						}
+					case "custom-idle":
+						{
+							cmd := exec.Command("playerctl", "metadata", "--format", "'{{ artist }} - {{ title }}'")
+							cmd.Env = append(os.Environ(), "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus", "DISPLAY=:0", "WAYLAND_DISPLAY=wayland-1", "XDG_SESSION_TYPE=wayland")
+							musicTitleb, _ := cmd.Output()
+							musicTitle := outputregex(string(musicTitleb[:]))
+
+							cmd = exec.Command("playerctl", "metadata", "mpris:artUrl")
+							cmd.Env = append(os.Environ(), "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus", "DISPLAY=:0", "WAYLAND_DISPLAY=wayland-1", "XDG_SESSION_TYPE=wayland")
+							musicArtb, _ := cmd.Output()
+							musicArt := outputregex(string(musicArtb[:]))
+
+							// cmd = exec.Command("strace", "pactl", "list", "sources", "short") //, "|", "grep", "-o", "'alsa_input.*TONOR_TC30.*fallback'") // mic status long ass thing
+							// cmd.Env = append(os.Environ(), "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus", "DISPLAY=:0", "WAYLAND_DISPLAY=wayland-1", "XDG_SESSION_TYPE=wayland", "SHELL=/usr/bin/bash")
+							// micstatusb, err := cmd.Output()
+							// micstatus := string(micstatusb[:])
+							// logger.Log(logger.Fields{"mic": micstatus, "err": err}).Error("MIC STATUS")
+
+							dateTime := fmt.Sprintf("%s - %s", common.GetDate(), common.GetTime())
+
+							buf := d.renderIdleScreen(dateTime, musicTitle, musicArt)
+							d.transfer(buf)
+						}
+					default:
 						{
 							buf := d.renderEmpty()
 							d.transfer(buf)
@@ -1004,9 +1164,21 @@ func (d *Device) backendListener() {
 					if active == 1 && blocked == false {
 						blocked = true
 						touchPosition := binary.LittleEndian.Uint16(data[6:8])
-						actionCode := d.getActionCodeByPosition(touchPosition)
+						actionCode, commandRun, commandENV := d.getActionCodeByPosition(touchPosition)
 						if actionCode != 0 {
 							inputmanager.InputControlVirtual(actionCode)
+						}
+						if commandRun != "" {
+							args := strings.Split(commandRun, " ")
+							cmd := exec.Command(args[0], args[1:]...)
+							if commandENV != "" {
+								envs := strings.Split(commandENV, " ")
+								cmd.Env = append(envs, os.Environ()...)
+							} else {
+								cmd.Env = os.Environ()
+							}
+							output, err := cmd.CombinedOutput()
+							logger.Log(logger.Fields{"output": output, "errors": err, "env": os.Environ()}).Error("RAN THE COMMANDDDDDDDDDDDDD")
 						}
 					} else if active == 0 && blocked == true {
 						blocked = false
@@ -1018,23 +1190,42 @@ func (d *Device) backendListener() {
 }
 
 // getActionCodeByPixel will return keyboard action code based on pixel position
-func (d *Device) getActionCodeByPosition(pixel uint16) uint8 {
+func (d *Device) getActionCodeByPosition(pixel uint16) (uint8, string, string) {
+	idleTimer.Stop()
+	idleTimer = time.NewTimer(time.Duration(15) * time.Second)
+	go func() {
+		<-idleTimer.C
+		d.UpdateDeviceLcdProfile("custom-idle")
+		//d.DeviceProfile.LCDMode = "custom-idle"
+		//logger.Log(logger.Fields{"output": output, "errors": err, "env": os.Environ()}).Error("RAN THE COMMANDDDDDDDDDDDDD")
+	}()
+	if d.DeviceProfile.LCDMode == "custom-idle" {
+		d.UpdateDeviceLcdProfile("custom-home")
+		//d.DeviceProfile.LCDMode = "custom-home"
+		return 0, "", ""
+	}
 	if d.DeviceProfile == nil {
-		return 0
+		return 0, "", ""
 	}
 
 	if d.LCDProfiles == nil {
-		return 0
+		return 0, "", ""
 	}
 
-	for _, value := range d.LCDProfiles.Profiles {
-		for _, button := range value.Buttons {
-			if pixel >= button.TouchPositionMin && pixel <= button.TouchPositionMax {
-				return button.ActionCode
+	for name, value := range d.LCDProfiles.Profiles {
+		if name == d.DeviceProfile.LCDMode {
+			for _, button := range value.Buttons {
+				if pixel >= button.TouchPositionMin && pixel <= button.TouchPositionMax {
+					if strings.Contains(button.Command, "switchscreen") {
+						d.UpdateDeviceLcdProfile(strings.Split(button.Command, " ")[1])
+						return 0, "", ""
+					}
+					return button.ActionCode, button.Command, button.CommandENV
+				}
 			}
 		}
 	}
-	return 0
+	return 0, "", ""
 }
 
 // transfer will transfer data to LCD panel

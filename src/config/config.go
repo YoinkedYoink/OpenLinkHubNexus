@@ -3,8 +3,9 @@ package config
 import (
 	"OpenLinkHub/src/common"
 	"encoding/json"
-	log "github.com/sirupsen/logrus"
 	"os"
+
+	log "github.com/sirupsen/logrus"
 )
 
 type Configuration struct {
