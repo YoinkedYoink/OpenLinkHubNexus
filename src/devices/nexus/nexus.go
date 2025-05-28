@@ -723,6 +723,23 @@ func textToRight(fontData *opentype.Font, fontSize float64, value string) (int, 
 	return x, y, textWidth, textHeight
 }
 
+func TruncateString(str string, length int) string {
+	if length <= 0 {
+		return ""
+	}
+
+	truncated := ""
+	count := 0
+	for _, char := range str {
+		truncated += string(char)
+		count++
+		if count >= length {
+			break
+		}
+	}
+	return truncated
+}
+
 // UpdateDeviceLcdProfile will change device LCD profile
 func (d *Device) UpdateDeviceLcdProfile(profileName string) uint8 {
 	if d.DeviceProfile == nil {
@@ -936,31 +953,15 @@ func (d *Device) renderIdleScreen(time string, musicTitle string, musicArt strin
 
 		//Draw Time
 		if musicTitle == "" { //if no music, center the time
-			c := freetype.NewContext()
-			c.SetDPI(72)
-			c.SetFont(profile.Font)
-			c.SetClip(rgba.Bounds())
-			c.SetDst(rgba)
-			c.SetSrc(image.NewUniform(color.RGBA{R: 255, G: 255, B: 253, A: 255}))
 			x, y, _, _ := calculateStringXY(profile.SfntFont, 30, time)
 			drawString(profile.SfntFont, x, y, 30, time, rgba, &profile.TextColor)
 
 		} else { // if music, move a little to the left
-			c := freetype.NewContext() //time
-			c.SetDPI(72)
-			c.SetFont(profile.Font)
-			c.SetClip(rgba.Bounds())
-			c.SetDst(rgba)
-			c.SetSrc(image.NewUniform(color.RGBA{R: 255, G: 255, B: 253, A: 255}))
+			//time
 			_, y, _, _ := calculateStringXY(profile.SfntFont, 26, time)
 			drawString(profile.SfntFont, 50, y, 26, time, rgba, &profile.TextColor)
 
-			c = freetype.NewContext() //music Title
-			c.SetDPI(72)
-			c.SetFont(profile.Font)
-			c.SetClip(rgba.Bounds())
-			c.SetDst(rgba)
-			c.SetSrc(image.NewUniform(color.RGBA{R: 255, G: 255, B: 253, A: 255}))
+			//music Title
 			_, y, _, _ = calculateStringXY(profile.SfntFont, 26, musicTitle)
 			drawString(profile.SfntFont, 290, y-3, 26, musicTitle, rgba, &profile.TextColor)
 
@@ -1013,6 +1014,11 @@ func (d *Device) renderIdleScreen(time string, musicTitle string, musicArt strin
 				}
 			}
 		}
+
+		drawString(profile.SfntFont, 540, 20, 20, dashboard.GetDashboard().TemperatureToString(d.CpuTemp), rgba, &profile.TextColor)
+		drawString(profile.SfntFont, 540, 41, 20, dashboard.GetDashboard().TemperatureToString(d.GpuTemp), rgba, &profile.TextColor)
+		drawString(profile.SfntFont, 600, 20, 20, fmt.Sprintf("%.2v %s", systeminfo.GetCpuUtilization(), "%"), rgba, &profile.TextColor)
+		drawString(profile.SfntFont, 600, 41, 20, fmt.Sprintf("%.2v %s", systeminfo.GetGPUUtilization(), "%"), rgba, &profile.TextColor)
 
 		//Render mic muted if it is muted
 
@@ -1084,6 +1090,7 @@ func (d *Device) setupLCD() {
 							cmd.Env = append(os.Environ(), "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus", "DISPLAY=:0", "WAYLAND_DISPLAY=wayland-1", "XDG_SESSION_TYPE=wayland")
 							musicTitleb, _ := cmd.Output()
 							musicTitle := outputregex(string(musicTitleb[:]))
+							musicTitle = TruncateString(musicTitle, 30)
 
 							cmd = exec.Command("playerctl", "metadata", "mpris:artUrl")
 							cmd.Env = append(os.Environ(), "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus", "DISPLAY=:0", "WAYLAND_DISPLAY=wayland-1", "XDG_SESSION_TYPE=wayland")
