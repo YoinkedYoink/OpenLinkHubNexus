@@ -25,7 +25,7 @@ import (
 	"image"
 	"image/color"
 	"image/jpeg"
-	_ "image/png"
+	"image/png"
 	"os"
 	"os/exec"
 	"regexp"
@@ -39,7 +39,6 @@ import (
 	"github.com/sstallion/go-hid"
 	"golang.org/x/image/draw"
 	"golang.org/x/image/font"
-	_ "golang.org/x/image/font"
 	"golang.org/x/image/font/opentype"
 	_ "golang.org/x/image/webp"
 )
@@ -988,6 +987,7 @@ func (d *Device) renderIdleScreen(time string, musicTitle string, musicArt strin
 
 				var overlayImg image.Image //hate this but it works
 				var decodeError error      //I like how in python you can assign anything to anything so you can write bad code and have it work
+				var resizedIcon image.Image
 
 				if musicArt[0:4] == "http" {
 
@@ -1007,6 +1007,9 @@ func (d *Device) renderIdleScreen(time string, musicTitle string, musicArt strin
 								logger.Log(logger.Fields{"error": decodeError, "serial": d.Serial, "location": musicArt}).Error("Unable to decode LCD profile icon")
 								return renderImageToBytes(rgba)
 							}
+
+							resizedIcon = overlayImg
+
 							ok = true
 						}
 					}
@@ -1017,9 +1020,12 @@ func (d *Device) renderIdleScreen(time string, musicTitle string, musicArt strin
 						overlayFile, _ := cmd.Output()
 
 						overlayImg, _, decodeError = image.Decode(bytes.NewReader(overlayFile))
+						resizedIcon = common.ResizeImage(overlayImg, 40, 40)
 
 						imgfile, _ := os.Create("database/nexus/imgcache/" + artname)
-						imgfile.Write(overlayFile)
+						buf := new(bytes.Buffer)
+						_ = png.Encode(buf, resizedIcon)
+						imgfile.Write(buf.Bytes())
 						imgfile.Close()
 
 						if decodeError != nil {
@@ -1038,12 +1044,14 @@ func (d *Device) renderIdleScreen(time string, musicTitle string, musicArt strin
 						return renderImageToBytes(rgba)
 					}
 
+					resizedIcon = common.ResizeImage(overlayImg, 40, 40)
+
 				} else {
 					logger.Log(logger.Fields{"serial": d.Serial, "location": musicArt}).Error("Unable to get music image")
 					return renderImageToBytes(rgba)
 				}
 
-				resizedIcon := common.ResizeImage(overlayImg, 40, 40)
+				// resizedIcon := common.ResizeImage(overlayImg, 40, 40)
 
 				// Convert the image to RGBA to get pixel data
 				iconImg := image.NewRGBA(image.Rect(0, 0, 40, 40))
