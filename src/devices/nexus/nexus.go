@@ -16,6 +16,7 @@ import (
 	"OpenLinkHub/src/rgb"
 	"OpenLinkHub/src/stats"
 	"OpenLinkHub/src/systeminfo"
+	"bytes"
 
 	"OpenLinkHub/src/temperatures"
 	"encoding/binary"
@@ -134,8 +135,8 @@ type Device struct {
 
 var (
 	pwd                        = ""
-	lcdRefreshInterval         = 100
-	deviceRefreshInterval      = 100
+	lcdRefreshInterval         = 500
+	deviceRefreshInterval      = 500
 	lcdHeaderSize              = 8
 	lcdBufferSize              = 1024
 	firmwareReportId           = byte(5)
@@ -967,51 +968,106 @@ func (d *Device) renderIdleScreen(time string, musicTitle string, musicArt strin
 
 			if musicArt != "" {
 				x, y := 0, 0
-				icon := strings.Replace(musicArt, "file://", "", -1)
-				overlayFile, e := os.Open(icon)
-				if e != nil {
-					logger.Log(logger.Fields{"error": e, "serial": d.Serial, "location": icon}).Error("Unable to load LCD profile icon")
 
-				} else { //Idk how else to make it skip if it errors
+				//check if file or link (spotify web images gets saved, spotify app is just a web link)
 
-					overlayImg, _, decodeError := image.Decode(overlayFile)
-					if decodeError != nil {
-						logger.Log(logger.Fields{"error": decodeError, "serial": d.Serial, "location": icon}).Error("Unable to decode LCD profile icon")
-						return renderImageToBytes(rgba)
-					} else { //Same here as well
+				var overlayImg image.Image //hate this but it works
+				var decodeError error      //I like how in python you can assign anything to anything so you can write bad code and have it work
 
-						resizedIcon := common.ResizeImage(overlayImg, 40, 40)
+				if musicArt[0:4] == "http" {
 
-						// Convert the image to RGBA to get pixel data
-						iconImg := image.NewRGBA(image.Rect(0, 0, 40, 40))
+					//TODO make it save small compressed output because spotify images like 300kb each
 
-						// Draw the image onto the RGBA object
-						for iy := y; iy < y+40; iy++ {
-							for ix := x; ix < x+40; ix++ {
-								// Get the color of the pixel
-								c := resizedIcon.At(ix, iy)
-								r, g, b, a := c.RGBA()
+					var ok bool
+					ok = false
 
-								// Convert to 8-bit RGBA (8 bits for each channel)
-								// Flip R and B values
-								iconImg.Set(ix-x, iy-y, color.RGBA{
-									B: uint8(r >> 8),
-									G: uint8(g >> 8),
-									R: uint8(b >> 8),
-									A: uint8(a >> 8),
-								})
+					artname := strings.NewReplacer(":", ".", "/", ".").Replace(musicArt)
+					artname += "png"
+					files, _ := os.ReadDir("./database/nexus/imgcache")
+					for _, v := range files {
+						if v.Name() == artname {
+							overlayFile, _ := os.Open("database/nexus/imgcache/" + artname)
+							overlayImg, _, decodeError = image.Decode(overlayFile)
+							if decodeError != nil {
+								logger.Log(logger.Fields{"error": decodeError, "serial": d.Serial, "location": musicArt}).Error("Unable to decode LCD profile icon")
+								return renderImageToBytes(rgba)
 							}
+							ok = true
 						}
+					}
+					if !ok {
+						logger.Log(logger.Fields{"serial": d.Serial, "location": musicArt}).Info("Downloading image from web")
+						cmd := exec.Command("curl", musicArt)
+						cmd.Env = append(os.Environ(), "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus", "DISPLAY=:0", "WAYLAND_DISPLAY=wayland-1", "XDG_SESSION_TYPE=wayland")
+						overlayFile, _ := cmd.Output()
 
-						// Set overlay position
-						offsetIcon := image.Pt(240, 4)
-						overlayIconRect := image.Rectangle{Min: offsetIcon, Max: offsetIcon.Add(resizedIcon.Bounds().Size())}
+						overlayImg, _, decodeError = image.Decode(bytes.NewReader(overlayFile))
 
-						// Draw overlay onto background with transparency (draw.Over handles alpha)
-						draw.Draw(rgba, overlayIconRect, iconImg, image.Point{}, draw.Over)
+						imgfile, _ := os.Create("database/nexus/imgcache/" + artname)
+						imgfile.Write(overlayFile)
+						imgfile.Close()
 
+						if decodeError != nil {
+							logger.Log(logger.Fields{"error": decodeError, "serial": d.Serial, "location": musicArt}).Error("Unable to decode LCD profile icon")
+							return renderImageToBytes(rgba)
+						}
+					}
+
+					// cmd := exec.Command("curl", musicArt)
+					// cmd.Env = append(os.Environ(), "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus", "DISPLAY=:0", "WAYLAND_DISPLAY=wayland-1", "XDG_SESSION_TYPE=wayland")
+					// overlayFile, _ := cmd.Output()
+
+					// overlayImg, _, decodeError = image.Decode(bytes.NewReader(overlayFile))
+					// if decodeError != nil {
+					// 	logger.Log(logger.Fields{"error": decodeError, "serial": d.Serial, "location": musicArt}).Error("Unable to decode LCD profile icon")
+					// 	return renderImageToBytes(rgba)
+					// }
+
+				} else if musicArt[0:4] == "file" {
+
+					icon := strings.Replace(musicArt, "file://", "", -1)
+					overlayFile, _ := os.Open(icon)
+					overlayImg, _, decodeError = image.Decode(overlayFile)
+					if decodeError != nil {
+						logger.Log(logger.Fields{"error": decodeError, "serial": d.Serial, "location": musicArt}).Error("Unable to decode LCD profile icon")
+						return renderImageToBytes(rgba)
+					}
+
+				} else {
+					logger.Log(logger.Fields{"serial": d.Serial, "location": musicArt}).Error("Unable to get music image")
+					return renderImageToBytes(rgba)
+				}
+
+				resizedIcon := common.ResizeImage(overlayImg, 40, 40)
+
+				// Convert the image to RGBA to get pixel data
+				iconImg := image.NewRGBA(image.Rect(0, 0, 40, 40))
+
+				// Draw the image onto the RGBA object
+				for iy := y; iy < y+40; iy++ {
+					for ix := x; ix < x+40; ix++ {
+						// Get the color of the pixel
+						c := resizedIcon.At(ix, iy)
+						r, g, b, a := c.RGBA()
+
+						// Convert to 8-bit RGBA (8 bits for each channel)
+						// Flip R and B values
+						iconImg.Set(ix-x, iy-y, color.RGBA{
+							B: uint8(r >> 8),
+							G: uint8(g >> 8),
+							R: uint8(b >> 8),
+							A: uint8(a >> 8),
+						})
 					}
 				}
+
+				// Set overlay position
+				offsetIcon := image.Pt(240, 4)
+				overlayIconRect := image.Rectangle{Min: offsetIcon, Max: offsetIcon.Add(resizedIcon.Bounds().Size())}
+
+				// Draw overlay onto background with transparency (draw.Over handles alpha)
+				draw.Draw(rgba, overlayIconRect, iconImg, image.Point{}, draw.Over)
+
 			}
 		}
 
