@@ -202,6 +202,21 @@ func Init(vendorId, productId uint16, serial string) *Device {
 	return d
 }
 
+var displayimgcache []byte
+var displayinputscache [10]string
+
+func (d *Device) CacheCheck(inputs [10]string) (bool, []byte) {
+	if displayinputscache == inputs {
+		return true, displayimgcache
+	}
+
+	displayinputscache = inputs
+	return false, []byte("")
+}
+func (d *Device) CacheSave(img []byte) {
+	displayimgcache = img
+}
+
 // Stop will stop all device operations and switch a device back to hardware mode
 func (d *Device) Stop() {
 	d.Exit = true
@@ -939,7 +954,7 @@ func drawString(fontData *opentype.Font, x, y int, fontSite float64, text string
 	d.DrawString(text)
 }
 
-func (d *Device) renderIdleScreen(time string, musicTitle string, musicArt string) []byte {
+func (d *Device) renderIdleScreen(time string, musicTitle string, musicArt string, deviceInfo [4]string) []byte {
 	if d.LCDProfiles == nil || d.DeviceProfile == nil {
 		return nil
 	}
@@ -1013,16 +1028,6 @@ func (d *Device) renderIdleScreen(time string, musicTitle string, musicArt strin
 						}
 					}
 
-					// cmd := exec.Command("curl", musicArt)
-					// cmd.Env = append(os.Environ(), "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus", "DISPLAY=:0", "WAYLAND_DISPLAY=wayland-1", "XDG_SESSION_TYPE=wayland")
-					// overlayFile, _ := cmd.Output()
-
-					// overlayImg, _, decodeError = image.Decode(bytes.NewReader(overlayFile))
-					// if decodeError != nil {
-					// 	logger.Log(logger.Fields{"error": decodeError, "serial": d.Serial, "location": musicArt}).Error("Unable to decode LCD profile icon")
-					// 	return renderImageToBytes(rgba)
-					// }
-
 				} else if musicArt[0:4] == "file" {
 
 					icon := strings.Replace(musicArt, "file://", "", -1)
@@ -1071,10 +1076,10 @@ func (d *Device) renderIdleScreen(time string, musicTitle string, musicArt strin
 			}
 		}
 
-		drawString(profile.SfntFont, 540, 20, 20, dashboard.GetDashboard().TemperatureToString(d.CpuTemp), rgba, &profile.TextColor)
-		drawString(profile.SfntFont, 540, 41, 20, dashboard.GetDashboard().TemperatureToString(d.GpuTemp), rgba, &profile.TextColor)
-		drawString(profile.SfntFont, 600, 20, 20, fmt.Sprintf("%.2v %s", systeminfo.GetCpuUtilization(), "%"), rgba, &profile.TextColor)
-		drawString(profile.SfntFont, 600, 41, 20, fmt.Sprintf("%.2v %s", systeminfo.GetGPUUtilization(), "%"), rgba, &profile.TextColor)
+		drawString(profile.SfntFont, 540, 20, 20, deviceInfo[0], rgba, &profile.TextColor)
+		drawString(profile.SfntFont, 540, 41, 20, deviceInfo[1], rgba, &profile.TextColor)
+		drawString(profile.SfntFont, 600, 20, 20, deviceInfo[2], rgba, &profile.TextColor)
+		drawString(profile.SfntFont, 600, 41, 20, deviceInfo[3], rgba, &profile.TextColor)
 
 		//Render mic muted if it is muted
 
@@ -1135,11 +1140,6 @@ func (d *Device) setupLCD() {
 							buf := d.renderTimeInfo(dateTime)
 							d.transfer(buf)
 						}
-					case "media-control":
-						{
-							buf := d.renderEmpty()
-							d.transfer(buf)
-						}
 					case "custom-idle":
 						{
 							cmd := exec.Command("playerctl", "metadata", "--format", "'{{ artist }} - {{ title }}'")
@@ -1161,13 +1161,28 @@ func (d *Device) setupLCD() {
 
 							dateTime := fmt.Sprintf("%s - %s", common.GetDate(), common.GetTime())
 
-							buf := d.renderIdleScreen(dateTime, musicTitle, musicArt)
-							d.transfer(buf)
+							deviceInfo := [4]string{dashboard.GetDashboard().TemperatureToString(d.CpuTemp), dashboard.GetDashboard().TemperatureToString(d.GpuTemp), fmt.Sprintf("%.2v %s", systeminfo.GetCpuUtilization(), "%"), fmt.Sprintf("%.2v %s", systeminfo.GetGPUUtilization(), "%")}
+
+							same, cache := d.CacheCheck([10]string{musicTitle, musicArt, dateTime, deviceInfo[0], deviceInfo[1], deviceInfo[2], deviceInfo[3]})
+
+							if same {
+								d.transfer(cache)
+							} else {
+								buf := d.renderIdleScreen(dateTime, musicTitle, musicArt, deviceInfo)
+								d.CacheSave(buf)
+								d.transfer(buf)
+							}
 						}
 					default:
 						{
-							buf := d.renderEmpty()
-							d.transfer(buf)
+							same, cache := d.CacheCheck([10]string{lcdMode})
+							if same {
+								d.transfer(cache)
+							} else {
+								buf := d.renderEmpty()
+								d.CacheSave(buf)
+								d.transfer(buf)
+							}
 						}
 					}
 				}
