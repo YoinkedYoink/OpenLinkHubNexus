@@ -237,7 +237,7 @@
         },
         "5": {
           "actionCode": 0,
-          "command": "bash /opt/OpenLinkHub/scripts/changepage.sh stats",
+          "command": "switchscreen custom-idle",
           "commandENV": "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus DISPLAY=:0 WAYLAND_DISPLAY=wayland-1 XDG_SESSION_TYPE=wayland",
           "text": "Stats",
           "textSize": 20,
