@@ -216,6 +216,29 @@ func (d *Device) CacheSave(img []byte) {
 	displayimgcache = img
 }
 
+var sysaverages = [][]int{
+	[]int{0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+	[]int{0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+	[]int{0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+	[]int{0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+}
+
+func (d *Device) averagesysstats(stats [4]int) [4]string {
+	averagedstats := [4]string{"0", "0", "0", "0"}
+
+	for i := range sysaverages {
+		sysaverages[i] = append(sysaverages[i][1:], stats[i])
+		sum := 0
+		for _, v := range sysaverages[i] {
+			sum += v
+		}
+		sum = int(sum / 10)
+		averagedstats[i] = strconv.Itoa(sum)
+	}
+
+	return averagedstats
+}
+
 // Stop will stop all device operations and switch a device back to hardware mode
 func (d *Device) Stop() {
 	d.Exit = true
@@ -953,7 +976,7 @@ func drawString(fontData *opentype.Font, x, y int, fontSite float64, text string
 	d.DrawString(text)
 }
 
-func (d *Device) renderIdleScreen(time string, musicTitle string, musicArt string, deviceInfo [4]string) []byte {
+func (d *Device) renderIdleScreen(time string, musicTitle string, musicArt string, avgDeviceInfo [4]string) []byte {
 	if d.LCDProfiles == nil || d.DeviceProfile == nil {
 		return nil
 	}
@@ -1084,10 +1107,10 @@ func (d *Device) renderIdleScreen(time string, musicTitle string, musicArt strin
 			}
 		}
 
-		drawString(profile.SfntFont, 540, 20, 20, deviceInfo[0], rgba, &profile.TextColor)
-		drawString(profile.SfntFont, 540, 41, 20, deviceInfo[1], rgba, &profile.TextColor)
-		drawString(profile.SfntFont, 600, 20, 20, deviceInfo[2], rgba, &profile.TextColor)
-		drawString(profile.SfntFont, 600, 41, 20, deviceInfo[3], rgba, &profile.TextColor)
+		drawString(profile.SfntFont, 540, 20, 20, avgDeviceInfo[0]+"\u00B0C", rgba, &profile.TextColor)
+		drawString(profile.SfntFont, 540, 41, 20, avgDeviceInfo[1]+"\u00B0C", rgba, &profile.TextColor)
+		drawString(profile.SfntFont, 600, 20, 20, avgDeviceInfo[2]+"%", rgba, &profile.TextColor)
+		drawString(profile.SfntFont, 600, 41, 20, avgDeviceInfo[3]+"%", rgba, &profile.TextColor)
 
 		//Render mic muted if it is muted
 
@@ -1169,14 +1192,16 @@ func (d *Device) setupLCD() {
 
 							dateTime := fmt.Sprintf("%s - %s", common.GetDate(), common.GetTime())
 
-							deviceInfo := [4]string{dashboard.GetDashboard().TemperatureToString(d.CpuTemp), dashboard.GetDashboard().TemperatureToString(d.GpuTemp), fmt.Sprintf("%.2v %s", systeminfo.GetCpuUtilization(), "%"), fmt.Sprintf("%.2v %s", systeminfo.GetGPUUtilization(), "%")}
+							//deviceInfo := [4]string{dashboard.GetDashboard().TemperatureToString(d.CpuTemp), dashboard.GetDashboard().TemperatureToString(d.GpuTemp), fmt.Sprintf("%.2v %s", systeminfo.GetCpuUtilization(), "%"), fmt.Sprintf("%.2v %s", systeminfo.GetGPUUtilization(), "%")}
+							deviceInfo := [4]int{int(d.CpuTemp), int(d.GpuTemp), int(systeminfo.GetCpuUtilization()), int(systeminfo.GetGPUUtilization())}
+							avgDeviceInfo := d.averagesysstats(deviceInfo)
 
-							same, cache := d.CacheCheck([10]string{musicTitle, musicArt, dateTime, deviceInfo[0], deviceInfo[1], deviceInfo[2], deviceInfo[3]})
+							same, cache := d.CacheCheck([10]string{musicTitle, musicArt, dateTime, avgDeviceInfo[0], avgDeviceInfo[1], avgDeviceInfo[2], avgDeviceInfo[3]})
 
 							if same {
 								d.transfer(cache)
 							} else {
-								buf := d.renderIdleScreen(dateTime, musicTitle, musicArt, deviceInfo)
+								buf := d.renderIdleScreen(dateTime, musicTitle, musicArt, avgDeviceInfo)
 								d.CacheSave(buf)
 								d.transfer(buf)
 							}
