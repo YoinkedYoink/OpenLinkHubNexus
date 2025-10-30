@@ -5,6 +5,19 @@ Manage RGB lighting, fan speeds, system metrics, as well as keyboards, mice, hea
 ![Build](https://github.com/jurkovic-nikola/OpenLinkHub/actions/workflows/go.yml/badge.svg)
 [![](https://dcbadge.limes.pink/api/server/https://discord.gg/mPHcasZRPy?style=flat)](https://discord.gg/mPHcasZRPy)
 
+## My own additions
+Note: The screen will go back to the Date/Time menu after 15 sec of inactivity (Not touching the screen)
+
+Date/Time with CPU/GPU stats
+![IMG_0025](https://github.com/user-attachments/assets/542c5b09-e3e1-4261-bb46-086f98df12de)
+When playing media include media info and thumbnail
+![IMG_0022](https://github.com/user-attachments/assets/1059ad44-3ee4-47f6-9511-ca40f3449e28)
+(WIP) Main menu when you touch the screen
+![IMG_0023](https://github.com/user-attachments/assets/a7fee20a-9684-4eac-af0a-290b663bffd7)
+(WIP) The apps menu
+![IMG_0024](https://github.com/user-attachments/assets/cb26f681-39fe-4e80-ab7f-3d08916f8a8c)
+
+
 ## Features
 
 - Web-based UI accessible at `http://localhost:27003`
