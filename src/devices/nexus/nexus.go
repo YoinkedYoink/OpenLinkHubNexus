@@ -145,6 +145,8 @@ var (
 	imgWidth                   = 640
 	imgHeight                  = 48
 	idleTimer                  = time.NewTimer(time.Duration(15) * time.Second)
+	outputroute                = []string{"", "", "", "", "", ""}
+	inputroute                 = []string{"", "", "", "", "", ""}
 )
 
 // Init will initialize a new device
@@ -965,6 +967,8 @@ func renderImageToBytes(img *image.RGBA) []byte {
 //
 // profileName must exist in d.LCDProfiles.Profiles
 func (d *Device) UpdateProfileButtons(profileName string, buttons map[int]Button) error {
+	buf := d.renderEmpty()
+	d.transfer(buf)
 	// Quick checks under lock to read the profile safely
 	d.mutex.Lock()
 	if d.LCDProfiles == nil {
@@ -982,12 +986,11 @@ func (d *Device) UpdateProfileButtons(profileName string, buttons map[int]Button
 	}
 
 	// Clone the base image reference under lock, then unlock for rendering
-	baseSrc := profile.Image
+
 	d.mutex.Unlock()
 
-	// Create a new RGBA to draw composed image
-	baseRGBA := image.NewRGBA(baseSrc.Bounds())
-	draw.Draw(baseRGBA, baseRGBA.Bounds(), baseSrc, image.Point{}, draw.Src)
+	rgba := image.NewRGBA(profile.Image.Bounds())
+	draw.Draw(rgba, rgba.Bounds(), profile.Image, image.Point{}, draw.Src)
 
 	// Iterate through buttons — draw each onto baseRGBA
 	for _, v := range buttons {
@@ -1074,18 +1077,18 @@ func (d *Device) UpdateProfileButtons(profileName string, buttons map[int]Button
 		// Overlay btnImg onto baseRGBA at OffsetX/OffsetY
 		offset := image.Pt(v.OffsetX, v.OffsetY)
 		overlayRect := image.Rectangle{Min: offset, Max: offset.Add(btnImg.Bounds().Size())}
-		draw.Draw(baseRGBA, overlayRect, btnImg, image.Point{}, draw.Over)
+		draw.Draw(rgba, overlayRect, btnImg, image.Point{}, draw.Over)
 	}
 
 	// Update the profile in a locked section (write)
 	d.mutex.Lock()
 	profile.Buttons = buttons
-	profile.Image = baseRGBA
+	profile.Image = rgba
 	d.LCDProfiles.Profiles[profileName] = profile
 	d.mutex.Unlock()
 
 	// Render to bytes and push to device (transfer will take its own mutex)
-	buf := renderImageToBytes(baseRGBA)
+	buf = renderImageToBytes(rgba)
 	// Call transfer asynchronously so caller isn't blocked — transfer itself handles locking.
 	go d.transfer(buf)
 
@@ -1368,7 +1371,7 @@ func (d *Device) setupLCD() {
 							}
 							Buttons[1] = Button{
 								ActionCode:       0,
-								Command:          "switchscreen custom-home",
+								Command:          "audioroutereset",
 								CommandENV:       "",
 								Text:             "Reset",
 								TextSize:         20,
@@ -1389,74 +1392,128 @@ func (d *Device) setupLCD() {
 								TouchPositionMax: 172,
 								TextColor:        rgb.Color{Red: 255, Green: 255, Blue: 255},
 							}
-							Buttons[2] = Button{
-								ActionCode:       0,
-								Command:          "switchscreen audio-route-output",
-								CommandENV:       "",
-								Text:             "Set Output",
-								TextSize:         20,
-								Width:            120,
-								Height:           42,
-								Background:       rgb.Color{Red: 24, Green: 24, Blue: 24},
-								Border:           1,
-								BorderColor:      rgb.Color{Red: 0, Green: 255, Blue: 255},
-								ShowIcon:         false,
-								Icon:             "",
-								IconWidth:        42,
-								IconHeight:       42,
-								IconOffsetX:      0,
-								IconOffsetY:      0,
-								OffsetX:          180,
-								OffsetY:          4,
-								TouchPositionMin: 180,
-								TouchPositionMax: 300,
-								TextColor:        rgb.Color{Red: 255, Green: 255, Blue: 255},
+							if outputroute[0] != "" {
+								Buttons[2] = Button{
+									ActionCode:       0,
+									Command:          "switchscreen audio-route-output",
+									CommandENV:       "",
+									Text:             "Output: " + outputroute[0],
+									TextSize:         20,
+									Width:            120,
+									Height:           42,
+									Background:       rgb.Color{Red: 24, Green: 24, Blue: 24},
+									Border:           1,
+									BorderColor:      rgb.Color{Red: 0, Green: 255, Blue: 255},
+									ShowIcon:         false,
+									Icon:             "",
+									IconWidth:        42,
+									IconHeight:       42,
+									IconOffsetX:      0,
+									IconOffsetY:      0,
+									OffsetX:          180,
+									OffsetY:          4,
+									TouchPositionMin: 180,
+									TouchPositionMax: 300,
+									TextColor:        rgb.Color{Red: 255, Green: 255, Blue: 255},
+								}
+							} else {
+								Buttons[2] = Button{
+									ActionCode:       0,
+									Command:          "switchscreen audio-route-output",
+									CommandENV:       "",
+									Text:             "Set Output",
+									TextSize:         20,
+									Width:            120,
+									Height:           42,
+									Background:       rgb.Color{Red: 24, Green: 24, Blue: 24},
+									Border:           1,
+									BorderColor:      rgb.Color{Red: 0, Green: 255, Blue: 255},
+									ShowIcon:         false,
+									Icon:             "",
+									IconWidth:        42,
+									IconHeight:       42,
+									IconOffsetX:      0,
+									IconOffsetY:      0,
+									OffsetX:          180,
+									OffsetY:          4,
+									TouchPositionMin: 180,
+									TouchPositionMax: 300,
+									TextColor:        rgb.Color{Red: 255, Green: 255, Blue: 255},
+								}
 							}
-							Buttons[3] = Button{
-								ActionCode:       0,
-								Command:          "switchscreen custom-home",
-								CommandENV:       "",
-								Text:             "Set Input",
-								TextSize:         20,
-								Width:            120,
-								Height:           42,
-								Background:       rgb.Color{Red: 24, Green: 24, Blue: 24},
-								Border:           1,
-								BorderColor:      rgb.Color{Red: 0, Green: 255, Blue: 255},
-								ShowIcon:         false,
-								Icon:             "",
-								IconWidth:        42,
-								IconHeight:       42,
-								IconOffsetX:      0,
-								IconOffsetY:      0,
-								OffsetX:          310,
-								OffsetY:          4,
-								TouchPositionMin: 310,
-								TouchPositionMax: 420,
-								TextColor:        rgb.Color{Red: 255, Green: 255, Blue: 255},
+							if inputroute[0] != "" {
+								Buttons[3] = Button{
+									ActionCode:       0,
+									Command:          "switchscreen audio-route-input",
+									CommandENV:       "",
+									Text:             "Input: " + inputroute[0],
+									TextSize:         20,
+									Width:            120,
+									Height:           42,
+									Background:       rgb.Color{Red: 24, Green: 24, Blue: 24},
+									Border:           1,
+									BorderColor:      rgb.Color{Red: 0, Green: 255, Blue: 255},
+									ShowIcon:         false,
+									Icon:             "",
+									IconWidth:        42,
+									IconHeight:       42,
+									IconOffsetX:      0,
+									IconOffsetY:      0,
+									OffsetX:          310,
+									OffsetY:          4,
+									TouchPositionMin: 310,
+									TouchPositionMax: 420,
+									TextColor:        rgb.Color{Red: 255, Green: 255, Blue: 255},
+								}
+							} else {
+								Buttons[3] = Button{
+									ActionCode:       0,
+									Command:          "switchscreen audio-route-input",
+									CommandENV:       "",
+									Text:             "Set Input",
+									TextSize:         20,
+									Width:            120,
+									Height:           42,
+									Background:       rgb.Color{Red: 24, Green: 24, Blue: 24},
+									Border:           1,
+									BorderColor:      rgb.Color{Red: 0, Green: 255, Blue: 255},
+									ShowIcon:         false,
+									Icon:             "",
+									IconWidth:        42,
+									IconHeight:       42,
+									IconOffsetX:      0,
+									IconOffsetY:      0,
+									OffsetX:          310,
+									OffsetY:          4,
+									TouchPositionMin: 310,
+									TouchPositionMax: 420,
+									TextColor:        rgb.Color{Red: 255, Green: 255, Blue: 255},
+								}
 							}
-							Buttons[4] = Button{
-								ActionCode:       0,
-								Command:          "switchscreen custom-home",
-								CommandENV:       "",
-								Text:             "Link",
-								TextSize:         20,
-								Width:            60,
-								Height:           42,
-								Background:       rgb.Color{Red: 24, Green: 24, Blue: 24},
-								Border:           1,
-								BorderColor:      rgb.Color{Red: 0, Green: 255, Blue: 255},
-								ShowIcon:         false,
-								Icon:             "",
-								IconWidth:        42,
-								IconHeight:       42,
-								IconOffsetX:      0,
-								IconOffsetY:      0,
-								OffsetX:          430,
-								OffsetY:          4,
-								TouchPositionMin: 430,
-								TouchPositionMax: 490,
-								TextColor:        rgb.Color{Red: 255, Green: 255, Blue: 255},
+							if outputroute[0] != "" && inputroute[0] != "" {
+								Buttons[4] = Button{
+									ActionCode:       0,
+									Command:          "shellcommand;./scripts/pipewire-routing.sh;link;" + outputroute[0] + ";" + inputroute[0] + ";" + outputroute[1] + ";" + inputroute[1],
+									CommandENV:       "switchscreen audio-route-routed noidle",
+									Text:             "Link",
+									TextSize:         20,
+									Width:            60,
+									Height:           42,
+									Background:       rgb.Color{Red: 24, Green: 24, Blue: 24},
+									Border:           1,
+									BorderColor:      rgb.Color{Red: 0, Green: 255, Blue: 255},
+									ShowIcon:         false,
+									Icon:             "",
+									IconWidth:        42,
+									IconHeight:       42,
+									IconOffsetX:      0,
+									IconOffsetY:      0,
+									OffsetX:          430,
+									OffsetY:          4,
+									TouchPositionMin: 430,
+									TouchPositionMax: 490,
+									TextColor:        rgb.Color{Red: 255, Green: 255, Blue: 255},
+								}
 							}
 							// btnWidth := 42
 							// btnHeight := 42
@@ -1497,44 +1554,129 @@ func (d *Device) setupLCD() {
 						}
 					case "audio-route-output":
 						{
-							// cmd := exec.Command("./scripts/pipewire-routing.sh", "outputs")
-							// cmd.Env = append(os.Environ(), "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus", "DISPLAY=:0", "WAYLAND_DISPLAY=wayland-1", "XDG_SESSION_TYPE=wayland")
-							// output, err := cmd.Output()
-							// outputs := outputregex(string(output[:]))
-							// logger.Log(logger.Fields{"err": outputs}).Error(err)
 							cmd := exec.Command("./scripts/pipewire-routing.sh", "outputs")
-							cmd.Env = append(os.Environ(),
-								"DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus",
-								"DISPLAY=:0",
-								"WAYLAND_DISPLAY=wayland-1",
-								"XDG_SESSION_TYPE=wayland",
-								"PATH="+os.Getenv("PATH")+":/usr/bin:/usr/local/bin",
-							)
-							// Use CombinedOutput to capture stdout + stderr
-							outBytes, err := cmd.CombinedOutput()
-							outStr := strings.TrimSpace(string(outBytes))
-							if err != nil {
-								// Log both the error and the output (which may contain helpful stderr)
-								logger.Log(logger.Fields{
-									"error":  err,
-									"output": outStr,
-								}).Error("pipewire-routing.sh outputs failed")
-							} else {
-								// Successful run — log stdout / parsed output
-								outputs := outputregex(outStr)
-								logger.Log(logger.Fields{
-									"parsed_output": outputs,
-									"raw_output":    outStr,
-								}).Info("pipewire-routing.sh outputs")
+							cmd.Env = append(os.Environ(), "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus", "DISPLAY=:0", "WAYLAND_DISPLAY=wayland-1", "XDG_SESSION_TYPE=wayland")
+							appoutputs, _ := cmd.Output()
+							outputs := outputregex(string(appoutputs[:]))
+							s2 := "[" + strings.ReplaceAll(outputs, "}{", "},{") + "]"
+							var arr []map[string]interface{}
+							if err := json.Unmarshal([]byte(s2), &arr); err != nil {
+								logger.Log(logger.Fields{"err": err}).Error("blah")
+							}
+
+							Buttons := map[int]Button{}
+
+							btnWidth := 100
+							btnHeight := 42
+							gap := 15
+							for i := 0; i < len(arr); i++ {
+								offsetX := 10 + i*(btnWidth+gap)
+								btn := Button{
+									ActionCode:       0,
+									Command:          "outputroute;" + arr[i]["name"].(string) + ";" + arr[i]["positions"].(string),
+									CommandENV:       "",
+									Text:             arr[i]["name"].(string),
+									TextSize:         20,
+									Width:            btnWidth,
+									Height:           btnHeight,
+									Background:       rgb.Color{Red: 24, Green: 24, Blue: 24},
+									Border:           1,
+									BorderColor:      rgb.Color{Red: 0, Green: 255, Blue: 255},
+									ShowIcon:         false,
+									Icon:             "",
+									IconWidth:        0,
+									IconHeight:       0,
+									IconOffsetX:      0,
+									IconOffsetY:      0,
+									OffsetX:          offsetX,
+									OffsetY:          4,
+									TouchPositionMin: uint16(offsetX - 2),
+									TouchPositionMax: uint16(offsetX + btnWidth + 2),
+									TextColor:        rgb.Color{Red: 255, Green: 255, Blue: 255},
+								}
+								Buttons[i] = btn
+							}
+							if err := d.UpdateProfileButtons("audio-route-output", Buttons); err != nil {
+								logger.Log(logger.Fields{"err": err}).Error("Failed to update audio-route-menu buttons")
 							}
 						}
 					case "audio-route-input":
 						{
+							cmd := exec.Command("./scripts/pipewire-routing.sh", "inputs")
+							cmd.Env = append(os.Environ(), "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus", "DISPLAY=:0", "WAYLAND_DISPLAY=wayland-1", "XDG_SESSION_TYPE=wayland")
+							appinputs, _ := cmd.Output()
+							inputs := outputregex(string(appinputs[:]))
+							s2 := "[" + strings.ReplaceAll(inputs, "}{", "},{") + "]"
+							var arr []map[string]interface{}
+							if err := json.Unmarshal([]byte(s2), &arr); err != nil {
+								logger.Log(logger.Fields{"err": err}).Error("blah")
+							}
 
+							Buttons := map[int]Button{}
+
+							btnWidth := 100
+							btnHeight := 42
+							gap := 15
+							for i := 0; i < len(arr); i++ {
+								offsetX := 10 + i*(btnWidth+gap)
+								btn := Button{
+									ActionCode:       0,
+									Command:          "inputroute;" + arr[i]["name"].(string) + ";" + arr[i]["positions"].(string),
+									CommandENV:       "",
+									Text:             arr[i]["name"].(string),
+									TextSize:         20,
+									Width:            btnWidth,
+									Height:           btnHeight,
+									Background:       rgb.Color{Red: 24, Green: 24, Blue: 24},
+									Border:           1,
+									BorderColor:      rgb.Color{Red: 0, Green: 255, Blue: 255},
+									ShowIcon:         false,
+									Icon:             "",
+									IconWidth:        0,
+									IconHeight:       0,
+									IconOffsetX:      0,
+									IconOffsetY:      0,
+									OffsetX:          offsetX,
+									OffsetY:          4,
+									TouchPositionMin: uint16(offsetX - 2),
+									TouchPositionMax: uint16(offsetX + btnWidth + 2),
+									TextColor:        rgb.Color{Red: 255, Green: 255, Blue: 255},
+								}
+								Buttons[i] = btn
+							}
+							if err := d.UpdateProfileButtons("audio-route-input", Buttons); err != nil {
+								logger.Log(logger.Fields{"err": err}).Error("Failed to update audio-route-menu buttons")
+							}
 						}
 					case "audio-route-routed":
 						{
-
+							Buttons := map[int]Button{}
+							Buttons[0] = Button{
+								ActionCode:       0,
+								Command:          "shellcommand;./scripts/pipewire-routing.sh;unlink;" + outputroute[0] + ";" + inputroute[0] + ";" + outputroute[1] + ";" + inputroute[1],
+								CommandENV:       "switchscreen audio-route-menu yesidle",
+								Text:             "UnLink",
+								TextSize:         20,
+								Width:            120,
+								Height:           42,
+								Background:       rgb.Color{Red: 24, Green: 24, Blue: 24},
+								Border:           1,
+								BorderColor:      rgb.Color{Red: 0, Green: 255, Blue: 255},
+								ShowIcon:         false,
+								Icon:             "",
+								IconWidth:        42,
+								IconHeight:       42,
+								IconOffsetX:      0,
+								IconOffsetY:      0,
+								OffsetX:          10,
+								OffsetY:          4,
+								TouchPositionMin: 0,
+								TouchPositionMax: 122,
+								TextColor:        rgb.Color{Red: 255, Green: 255, Blue: 255},
+							}
+							if err := d.UpdateProfileButtons("audio-route-routed", Buttons); err != nil {
+								logger.Log(logger.Fields{"err": err}).Error("Failed to update audio-route-menu buttons")
+							}
 						}
 					case "audio-route-error":
 						{
@@ -1663,9 +1805,40 @@ func (d *Device) getActionCodeByPosition(pixel uint16) (uint8, string, string) {
 			if pixel >= button.TouchPositionMin && pixel <= button.TouchPositionMax {
 				if strings.Contains(button.Command, "switchscreen") {
 					d.UpdateDeviceLcdProfile(strings.Split(button.Command, " ")[1])
-					return 0, "", ""
 				}
-				return button.ActionCode, button.Command, button.CommandENV
+				if strings.Contains(button.Command, "inputroute") {
+					inputroute = strings.Split(button.Command, ";")[1:]
+					logger.Log(logger.Fields{"err": inputroute}).Error("blah")
+					d.UpdateDeviceLcdProfile("audio-route-menu")
+				}
+				if strings.Contains(button.Command, "outputroute") {
+					outputroute = strings.Split(button.Command, ";")[1:]
+					logger.Log(logger.Fields{"err": outputroute}).Error("blah")
+					d.UpdateDeviceLcdProfile("audio-route-menu")
+				}
+				if strings.Contains(button.Command, "shellcommand") {
+					command := strings.Split(button.Command, ";")[1:]
+					cmd := exec.Command(command[0], command[1:]...)
+					cmd.Env = append(os.Environ(), "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus", "DISPLAY=:0", "WAYLAND_DISPLAY=wayland-1", "XDG_SESSION_TYPE=wayland")
+					_, _ = cmd.Output()
+					//logger.Log(logger.Fields{"err": string(output[:])}).Error(err.Error())
+					//return 0, string(output[:]), ""
+				}
+				if strings.Contains(button.Command, "audioroutereset") {
+					inputroute = []string{"", "", "", "", "", ""}
+					outputroute = []string{"", "", "", "", "", ""}
+				}
+				if strings.Contains(button.CommandENV, "switchscreen") {
+					d.UpdateDeviceLcdProfile(strings.Split(button.CommandENV, " ")[1])
+				}
+				if strings.Contains(button.CommandENV, "noidle") {
+					idleTimer.Stop()
+				}
+				if strings.Contains(button.CommandENV, "yesidle") {
+					idleTimer = time.NewTimer(time.Duration(15) * time.Second)
+				}
+				return 0, "", ""
+				//return button.ActionCode, button.Command, button.CommandENV
 			}
 		}
 	}

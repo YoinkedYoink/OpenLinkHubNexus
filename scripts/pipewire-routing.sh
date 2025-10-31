@@ -63,7 +63,7 @@ fi
 
 #arg           output_name    input_name     output_pos_list input_pos_list
 #unlink        spotify        Sober          "FL FR"         "MONO"
-if [ "$1" = "unlink" ]; then # same as above but with 
+if [ "$1" = "unlink" ]; then # same as above but with unlink
     IFS=' ' read -r -a output_pos <<< "$4"
     IFS=' ' read -r -a input_pos <<< "$5"
 

@@ -48,7 +48,7 @@ if [ -f $SYSTEMD_FILE ]; then
   cp -r ./ ${HOME}/.local/share/$PRODUCT
   chmod -R 755 ${HOME}/.local/share/$PRODUCT/
   chown -R "$USERNAME":"$USERNAME" ${HOME}/.local/share/$PRODUCT/
-  cp ${HOME}/.local/share/$PRODUCT/99-openlinkhub.rules /etc/udev/rules.d/
+  # cp ${HOME}/.local/share/$PRODUCT/99-openlinkhub.rules /etc/udev/rules.d/
   echo "Reloading udev..."
   systemctl --user daemon-reload
   systemctl --user start $PRODUCT

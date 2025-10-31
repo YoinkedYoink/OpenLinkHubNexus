@@ -401,6 +401,42 @@
       },
       "buttons": {},
       "keyboard": true
+    },
+    "audio-route-input": {
+      "name": "Audio Route Input",
+      "background": "/database/nexus/background.jpg",
+      "fontPath": "/static/fonts/teko.ttf",
+      "textColor": {
+        "red": 255,
+        "green": 255,
+        "blue": 255
+      },
+      "buttons": {},
+      "keyboard": true
+    },
+    "audio-route-routed": {
+      "name": "Audio Route Status",
+      "background": "/database/nexus/background.jpg",
+      "fontPath": "/static/fonts/teko.ttf",
+      "textColor": {
+        "red": 255,
+        "green": 255,
+        "blue": 255
+      },
+      "buttons": {},
+      "keyboard": true
+    },
+    "audio-route-error": {
+      "name": "Audio Route Error",
+      "background": "/database/nexus/background.jpg",
+      "fontPath": "/static/fonts/teko.ttf",
+      "textColor": {
+        "red": 255,
+        "green": 255,
+        "blue": 255
+      },
+      "buttons": {},
+      "keyboard": true
     }
   }
 }
