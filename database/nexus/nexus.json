@@ -97,7 +97,7 @@
         },
         "1": {
           "actionCode": 0,
-          "command": "bash /opt/OpenLinkHub/scripts/changepage.sh media",
+          "command": "switchscreen audio-route-menu",
           "commandENV": "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus DISPLAY=:0 WAYLAND_DISPLAY=wayland-1 XDG_SESSION_TYPE=wayland",
           "text": "Media",
           "textSize": 20,
@@ -132,7 +132,7 @@
         },
         "2": {
           "actionCode": 0,
-          "command": "bash /opt/OpenLinkHub/scripts/changepage.sh macro",
+          "command": "switchscreen audio-route-menu",
           "commandENV": "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus DISPLAY=:0 WAYLAND_DISPLAY=wayland-1 XDG_SESSION_TYPE=wayland",
           "text": "Macro",
           "textSize": 20,
@@ -167,7 +167,7 @@
         },
         "3": {
           "actionCode": 0,
-          "command": "echo hi",
+          "command": "switchscreen audio-route-menu",
           "commandENV": "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus DISPLAY=:0 WAYLAND_DISPLAY=wayland-1 XDG_SESSION_TYPE=wayland",
           "text": "BLANK",
           "textSize": 20,
@@ -368,6 +368,30 @@
 
     "custom-idle": {
       "name": "Custom Idle",
+      "background": "/database/nexus/background.jpg",
+      "fontPath": "/static/fonts/teko.ttf",
+      "textColor": {
+        "red": 255,
+        "green": 255,
+        "blue": 255
+      },
+      "buttons": {},
+      "keyboard": true
+    },
+    "audio-route-menu": {
+      "name": "Audio Route Menu",
+      "background": "/database/nexus/background.jpg",
+      "fontPath": "/static/fonts/teko.ttf",
+      "textColor": {
+        "red": 255,
+        "green": 255,
+        "blue": 255
+      },
+      "buttons": {},
+      "keyboard": true
+    },
+    "audio-route-output": {
+      "name": "Audio Route Output",
       "background": "/database/nexus/background.jpg",
       "fontPath": "/static/fonts/teko.ttf",
       "textColor": {

@@ -28,6 +28,7 @@ import (
 	"image/png"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -217,10 +218,10 @@ func (d *Device) CacheSave(img []byte) {
 }
 
 var sysaverages = [][]int{
-	[]int{0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-	[]int{0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-	[]int{0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-	[]int{0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
 }
 
 func (d *Device) averagesysstats(stats [4]int) [4]string {
@@ -958,6 +959,139 @@ func renderImageToBytes(img *image.RGBA) []byte {
 	return data
 }
 
+// UpdateProfileButtons replaces/sets profile.Buttons and re-renders profile.Image by
+// compositing the profile background with the buttons. It then pushes the image
+// to the device immediately.
+//
+// profileName must exist in d.LCDProfiles.Profiles
+func (d *Device) UpdateProfileButtons(profileName string, buttons map[int]Button) error {
+	// Quick checks under lock to read the profile safely
+	d.mutex.Lock()
+	if d.LCDProfiles == nil {
+		d.mutex.Unlock()
+		return fmt.Errorf("lcd profiles not loaded")
+	}
+	profile, ok := d.LCDProfiles.Profiles[profileName]
+	if !ok {
+		d.mutex.Unlock()
+		return fmt.Errorf("profile %q not found", profileName)
+	}
+	if profile.Image == nil {
+		d.mutex.Unlock()
+		return fmt.Errorf("profile %q has no base image to draw on", profileName)
+	}
+
+	// Clone the base image reference under lock, then unlock for rendering
+	baseSrc := profile.Image
+	d.mutex.Unlock()
+
+	// Create a new RGBA to draw composed image
+	baseRGBA := image.NewRGBA(baseSrc.Bounds())
+	draw.Draw(baseRGBA, baseRGBA.Bounds(), baseSrc, image.Point{}, draw.Src)
+
+	// Iterate through buttons — draw each onto baseRGBA
+	for _, v := range buttons {
+		// Create a button image (background + border)
+		if v.Width <= 0 || v.Height <= 0 {
+			// skip invalid size
+			continue
+		}
+		btnImg := image.NewRGBA(image.Rect(0, 0, v.Width, v.Height))
+
+		// Background and border colors (note: codebase flips R/B in many places)
+		backgroundColor := color.NRGBA{
+			A: 255,
+			R: uint8(v.Background.Blue),
+			G: uint8(v.Background.Green),
+			B: uint8(v.Background.Red),
+		}
+		borderColor := color.NRGBA{
+			A: 255,
+			R: uint8(v.BorderColor.Blue),
+			G: uint8(v.BorderColor.Green),
+			B: uint8(v.BorderColor.Red),
+		}
+
+		// Fill background
+		draw.Draw(btnImg, btnImg.Bounds(), &image.Uniform{C: backgroundColor}, image.Point{}, draw.Src)
+
+		// Draw border
+		if v.Border > 0 {
+			for i := 0; i < v.Width; i++ {
+				for j := 0; j < v.Height; j++ {
+					if i < v.Border || i >= v.Width-v.Border || j < v.Border || j >= v.Height-v.Border {
+						btnImg.Set(i, j, borderColor)
+					}
+				}
+			}
+		}
+
+		// Draw text on button
+		if v.Text != "" && v.TextSize > 0 {
+			xPos, yPos, _, _ := calculateStringXYCustomSize(profile.SfntFont, float64(v.TextSize), v.Text, v.Width, v.Height)
+			if len(v.Icon) > 0 && v.IconWidth > 0 && v.ShowIcon {
+				// If icon present, offset text half icon width like other code paths
+				drawString(profile.SfntFont, xPos+(v.IconWidth/2), yPos, float64(v.TextSize), v.Text, btnImg, &v.TextColor)
+			} else {
+				drawString(profile.SfntFont, xPos, yPos, float64(v.TextSize), v.Text, btnImg, &v.TextColor)
+			}
+		}
+
+		// If there is an icon, decode and draw it onto the button
+		if len(v.Icon) > 0 && v.ShowIcon && v.IconWidth > 0 && v.IconHeight > 0 {
+			iconPath := v.Icon
+			// follow existing project convention: prefix pwd for relative paths
+			if !filepath.IsAbs(iconPath) {
+				iconPath = pwd + iconPath
+			}
+			if f, err := os.Open(iconPath); err == nil {
+				overlayImg, _, decodeErr := image.Decode(f)
+				f.Close()
+				if decodeErr == nil {
+					resizedIcon := common.ResizeImage(overlayImg, v.IconWidth, v.IconHeight)
+					// Convert resized icon to RGBA (flip R/B like other code paths)
+					iconRGBA := image.NewRGBA(image.Rect(0, 0, v.IconWidth, v.IconHeight))
+					for iy := 0; iy < v.IconHeight; iy++ {
+						for ix := 0; ix < v.IconWidth; ix++ {
+							c := resizedIcon.At(ix, iy)
+							r, g, b, a := c.RGBA()
+							iconRGBA.Set(ix, iy, color.RGBA{
+								B: uint8(r >> 8),
+								G: uint8(g >> 8),
+								R: uint8(b >> 8),
+								A: uint8(a >> 8),
+							})
+						}
+					}
+					// Draw icon onto btnImg using IconOffsetX/Y
+					offsetIcon := image.Pt(v.IconOffsetX, v.IconOffsetY)
+					overlayIconRect := image.Rectangle{Min: offsetIcon, Max: offsetIcon.Add(iconRGBA.Bounds().Size())}
+					draw.Draw(btnImg, overlayIconRect, iconRGBA, image.Point{}, draw.Over)
+				}
+			}
+		}
+
+		// Overlay btnImg onto baseRGBA at OffsetX/OffsetY
+		offset := image.Pt(v.OffsetX, v.OffsetY)
+		overlayRect := image.Rectangle{Min: offset, Max: offset.Add(btnImg.Bounds().Size())}
+		draw.Draw(baseRGBA, overlayRect, btnImg, image.Point{}, draw.Over)
+	}
+
+	// Update the profile in a locked section (write)
+	d.mutex.Lock()
+	profile.Buttons = buttons
+	profile.Image = baseRGBA
+	d.LCDProfiles.Profiles[profileName] = profile
+	d.mutex.Unlock()
+
+	// Render to bytes and push to device (transfer will take its own mutex)
+	buf := renderImageToBytes(baseRGBA)
+	// Call transfer asynchronously so caller isn't blocked — transfer itself handles locking.
+	go d.transfer(buf)
+
+	return nil
+}
+
 // drawString will create a new string for image
 func drawString(fontData *opentype.Font, x, y int, fontSite float64, text string, rgba *image.RGBA, textColor *rgb.Color) {
 	pt := freetype.Pt(x, y)
@@ -1192,7 +1326,6 @@ func (d *Device) setupLCD() {
 
 							dateTime := fmt.Sprintf("%s - %s", common.GetDate(), common.GetTime())
 
-							//deviceInfo := [4]string{dashboard.GetDashboard().TemperatureToString(d.CpuTemp), dashboard.GetDashboard().TemperatureToString(d.GpuTemp), fmt.Sprintf("%.2v %s", systeminfo.GetCpuUtilization(), "%"), fmt.Sprintf("%.2v %s", systeminfo.GetGPUUtilization(), "%")}
 							deviceInfo := [4]int{int(d.CpuTemp), int(d.GpuTemp), int(systeminfo.GetCpuUtilization()), int(systeminfo.GetGPUUtilization())}
 							avgDeviceInfo := d.averagesysstats(deviceInfo)
 
@@ -1205,6 +1338,207 @@ func (d *Device) setupLCD() {
 								d.CacheSave(buf)
 								d.transfer(buf)
 							}
+						}
+					case "audio-route-menu":
+						{
+							//This is absolutely awful but oh well
+							Buttons := map[int]Button{}
+							Buttons[0] = Button{
+								ActionCode:       0,
+								Command:          "switchscreen custom-home",
+								CommandENV:       "",
+								Text:             "Home",
+								TextSize:         20,
+								Width:            42,
+								Height:           42,
+								Background:       rgb.Color{Red: 24, Green: 24, Blue: 24},
+								Border:           1,
+								BorderColor:      rgb.Color{Red: 0, Green: 255, Blue: 255},
+								ShowIcon:         false,
+								Icon:             "",
+								IconWidth:        42,
+								IconHeight:       42,
+								IconOffsetX:      0,
+								IconOffsetY:      0,
+								OffsetX:          10,
+								OffsetY:          4,
+								TouchPositionMin: 0,
+								TouchPositionMax: 42,
+								TextColor:        rgb.Color{Red: 255, Green: 255, Blue: 255},
+							}
+							Buttons[1] = Button{
+								ActionCode:       0,
+								Command:          "switchscreen custom-home",
+								CommandENV:       "",
+								Text:             "Reset",
+								TextSize:         20,
+								Width:            120,
+								Height:           42,
+								Background:       rgb.Color{Red: 24, Green: 24, Blue: 24},
+								Border:           1,
+								BorderColor:      rgb.Color{Red: 0, Green: 255, Blue: 255},
+								ShowIcon:         false,
+								Icon:             "",
+								IconWidth:        42,
+								IconHeight:       42,
+								IconOffsetX:      0,
+								IconOffsetY:      0,
+								OffsetX:          50,
+								OffsetY:          4,
+								TouchPositionMin: 48,
+								TouchPositionMax: 172,
+								TextColor:        rgb.Color{Red: 255, Green: 255, Blue: 255},
+							}
+							Buttons[2] = Button{
+								ActionCode:       0,
+								Command:          "switchscreen audio-route-output",
+								CommandENV:       "",
+								Text:             "Set Output",
+								TextSize:         20,
+								Width:            120,
+								Height:           42,
+								Background:       rgb.Color{Red: 24, Green: 24, Blue: 24},
+								Border:           1,
+								BorderColor:      rgb.Color{Red: 0, Green: 255, Blue: 255},
+								ShowIcon:         false,
+								Icon:             "",
+								IconWidth:        42,
+								IconHeight:       42,
+								IconOffsetX:      0,
+								IconOffsetY:      0,
+								OffsetX:          180,
+								OffsetY:          4,
+								TouchPositionMin: 180,
+								TouchPositionMax: 300,
+								TextColor:        rgb.Color{Red: 255, Green: 255, Blue: 255},
+							}
+							Buttons[3] = Button{
+								ActionCode:       0,
+								Command:          "switchscreen custom-home",
+								CommandENV:       "",
+								Text:             "Set Input",
+								TextSize:         20,
+								Width:            120,
+								Height:           42,
+								Background:       rgb.Color{Red: 24, Green: 24, Blue: 24},
+								Border:           1,
+								BorderColor:      rgb.Color{Red: 0, Green: 255, Blue: 255},
+								ShowIcon:         false,
+								Icon:             "",
+								IconWidth:        42,
+								IconHeight:       42,
+								IconOffsetX:      0,
+								IconOffsetY:      0,
+								OffsetX:          310,
+								OffsetY:          4,
+								TouchPositionMin: 310,
+								TouchPositionMax: 420,
+								TextColor:        rgb.Color{Red: 255, Green: 255, Blue: 255},
+							}
+							Buttons[4] = Button{
+								ActionCode:       0,
+								Command:          "switchscreen custom-home",
+								CommandENV:       "",
+								Text:             "Link",
+								TextSize:         20,
+								Width:            60,
+								Height:           42,
+								Background:       rgb.Color{Red: 24, Green: 24, Blue: 24},
+								Border:           1,
+								BorderColor:      rgb.Color{Red: 0, Green: 255, Blue: 255},
+								ShowIcon:         false,
+								Icon:             "",
+								IconWidth:        42,
+								IconHeight:       42,
+								IconOffsetX:      0,
+								IconOffsetY:      0,
+								OffsetX:          430,
+								OffsetY:          4,
+								TouchPositionMin: 430,
+								TouchPositionMax: 490,
+								TextColor:        rgb.Color{Red: 255, Green: 255, Blue: 255},
+							}
+							// btnWidth := 42
+							// btnHeight := 42
+							// gap := 10
+							// for i := 0; i < 6; i++ {
+							// 	offsetX := 10 + i*(btnWidth+gap)
+							// 	btn := Button{
+							// 		ActionCode:       0,
+							// 		Command:          "switchscreen custom-home",
+							// 		CommandENV:       "",
+							// 		Text:             fmt.Sprintf("%d", i+1),
+							// 		TextSize:         20,
+							// 		Width:            btnWidth,
+							// 		Height:           btnHeight,
+							// 		Background:       rgb.Color{Red: 24, Green: 24, Blue: 24},
+							// 		Border:           1,
+							// 		BorderColor:      rgb.Color{Red: 0, Green: 255, Blue: 255},
+							// 		ShowIcon:         false,
+							// 		Icon:             "",
+							// 		IconWidth:        0,
+							// 		IconHeight:       0,
+							// 		IconOffsetX:      0,
+							// 		IconOffsetY:      0,
+							// 		OffsetX:          offsetX,
+							// 		OffsetY:          4,
+							// 		TouchPositionMin: uint16(offsetX),
+							// 		TouchPositionMax: uint16(offsetX + btnWidth),
+							// 		TextColor:        rgb.Color{Red: 255, Green: 255, Blue: 255},
+							// 	}
+							// 	Buttons[i] = btn
+							// }
+
+							// then call:
+							if err := d.UpdateProfileButtons("audio-route-menu", Buttons); err != nil {
+								logger.Log(logger.Fields{"err": err}).Error("Failed to update audio-route-menu buttons")
+							}
+							// {"0":{"actionCode":0,"command":"switchscreen custom-home","commandENV":"DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus DISPLAY=:0 WAYLAND_DISPLAY=wayland-1 XDG_SESSION_TYPE=wayland","text":"","textSize":20,"width":42,"height":42,"background":{"red":24,"green":24,"blue":24,"brightness":0,"Hex":""},"border":1,"borderColor":{"red":0,"green":255,"blue":255,"brightness":0,"Hex":""},"showIcon":true,"icon":"/database/nexus/home-icon.png","iconWidth":42,"iconHeight":42,"iconOffsetX":0,"iconOffsetY":0,"offsetX":10,"offsetY":4,"touchPositionMin":0,"touchPositionMax":42,"textColor":{"red":255,"green":255,"blue":0,"brightness":0,"Hex":""}},"1":{"actionCode":0,"command":"vesktop","commandENV":"DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus DISPLAY=:0 WAYLAND_DISPLAY=wayland-1 XDG_SESSION_TYPE=wayland","text":"","textSize":20,"width":42,"height":42,"background":{"red":24,"green":24,"blue":24,"brightness":0,"Hex":""},"border":1,"borderColor":{"red":0,"green":255,"blue":255,"brightness":0,"Hex":""},"showIcon":true,"icon":"/database/nexus/vesktop.png","iconWidth":42,"iconHeight":42,"iconOffsetX":0,"iconOffsetY":0,"offsetX":532,"offsetY":4,"touchPositionMin":532,"touchPositionMax":574,"textColor":{"red":255,"green":255,"blue":0,"brightness":0,"Hex":""}}}
+						}
+					case "audio-route-output":
+						{
+							// cmd := exec.Command("./scripts/pipewire-routing.sh", "outputs")
+							// cmd.Env = append(os.Environ(), "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus", "DISPLAY=:0", "WAYLAND_DISPLAY=wayland-1", "XDG_SESSION_TYPE=wayland")
+							// output, err := cmd.Output()
+							// outputs := outputregex(string(output[:]))
+							// logger.Log(logger.Fields{"err": outputs}).Error(err)
+							cmd := exec.Command("./scripts/pipewire-routing.sh", "outputs")
+							cmd.Env = append(os.Environ(),
+								"DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus",
+								"DISPLAY=:0",
+								"WAYLAND_DISPLAY=wayland-1",
+								"XDG_SESSION_TYPE=wayland",
+								"PATH="+os.Getenv("PATH")+":/usr/bin:/usr/local/bin",
+							)
+							// Use CombinedOutput to capture stdout + stderr
+							outBytes, err := cmd.CombinedOutput()
+							outStr := strings.TrimSpace(string(outBytes))
+							if err != nil {
+								// Log both the error and the output (which may contain helpful stderr)
+								logger.Log(logger.Fields{
+									"error":  err,
+									"output": outStr,
+								}).Error("pipewire-routing.sh outputs failed")
+							} else {
+								// Successful run — log stdout / parsed output
+								outputs := outputregex(outStr)
+								logger.Log(logger.Fields{
+									"parsed_output": outputs,
+									"raw_output":    outStr,
+								}).Info("pipewire-routing.sh outputs")
+							}
+						}
+					case "audio-route-input":
+						{
+
+						}
+					case "audio-route-routed":
+						{
+
+						}
+					case "audio-route-error":
+						{
+
 						}
 					default:
 						{
@@ -1324,6 +1658,7 @@ func (d *Device) getActionCodeByPosition(pixel uint16) (uint8, string, string) {
 	}
 
 	if value, ok := d.LCDProfiles.Profiles[d.DeviceProfile.LCDMode]; ok {
+		//logger.Log(logger.Fields{"serial": d.Serial, "Buttons": value.Buttons}).Error("Unable to write to a device")
 		for _, button := range value.Buttons {
 			if pixel >= button.TouchPositionMin && pixel <= button.TouchPositionMax {
 				if strings.Contains(button.Command, "switchscreen") {
