@@ -21,12 +21,13 @@ if [ "$1" = "link" ]; then
     IFS=' ' read -r -a output_pos <<< "$4"
     IFS=' ' read -r -a input_pos <<< "$5"
 
+
     if [ ${#input_pos[@]} = 1 ]; then
         for outpos in "${output_pos[@]}"
         do
             output="${2}:output_${outpos}"
             input="${3}:input_${input_pos[0]}"
-            pw-link $output $input
+            pw-link "$output" "$input"
         done
         exit 0
     fi
@@ -41,7 +42,7 @@ if [ "$1" = "link" ]; then
                 if [ $outpos = $inpos ]; then
                     output="${2}:output_${outpos}"
                     input="${3}:input_${inpos}"
-                    pw-link $output $input
+                    pw-link "$output" "$input"
                 fi
             done
         done
@@ -53,7 +54,7 @@ if [ "$1" = "link" ]; then
         do
             output="${2}:output_${output_pos[0]}"
             input="${3}:input_${inpos}"
-            pw-link $output $input
+            pw-link "$output" "$input"
         done
         exit 0
     fi
@@ -72,7 +73,7 @@ if [ "$1" = "unlink" ]; then # same as above but with unlink
         do
             output="${2}:output_${outpos}"
             input="${3}:input_${input_pos[0]}"
-            pw-link -d $output $input || true
+            pw-link -d "$output" "$input" || true
         done
         exit 0
     fi
@@ -87,7 +88,7 @@ if [ "$1" = "unlink" ]; then # same as above but with unlink
                 if [ $outpos = $inpos ]; then
                     output="${2}:output_${outpos}"
                     input="${3}:input_${inpos}"
-                    pw-link -d $output $input || true
+                    pw-link -d "$output" "$input" || true
                 fi
             done
         done
@@ -99,7 +100,7 @@ if [ "$1" = "unlink" ]; then # same as above but with unlink
         do
             output="${2}:output_${output_pos[0]}"
             input="${3}:input_${inpos}"
-            pw-link -d $output $input || true
+            pw-link -d "$output" "$input" || true
         done
         exit 0
     fi
