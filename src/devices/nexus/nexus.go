@@ -19,6 +19,7 @@ import (
 	"bytes"
 
 	"OpenLinkHub/src/temperatures"
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -1206,8 +1207,15 @@ func (d *Device) renderIdleScreen(time string, musicTitle string, musicArt strin
 
 					resizedIcon = common.ResizeImage(overlayImg, 40, 40)
 
+				} else if musicArt[0:23] == "data:image/jpeg;base64," {
+					decodedToJpeg, _ := base64.StdEncoding.DecodeString(strings.TrimPrefix(musicArt, "data:image/jpeg;base64,"))
+					overlayImg, decodeError = jpeg.Decode(bytes.NewReader(decodedToJpeg))
+					if decodeError != nil {
+						logger.Log(logger.Fields{"error": decodeError, "serial": d.Serial, "location": musicArt}).Error("Unable to decode LCD profile icon")
+						return renderImageToBytes(rgba)
+					}
+					resizedIcon = common.ResizeImage(overlayImg, 40, 40)
 				} else {
-					logger.Log(logger.Fields{"serial": d.Serial, "location": musicArt}).Error("Unable to get music image")
 					return renderImageToBytes(rgba)
 				}
 
